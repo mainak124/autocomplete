@@ -1,5 +1,13 @@
-data_file_name = 'history.txt'
-vocab_file_name = 'vocab.txt'
+import argparse
+
+parser = argparse.ArgumentParser(description='Build character vocabulary from input text file.')
+parser.add_argument('-i', '--input', default='data/history.txt', required=True, help='Input text file to create vocabulary')
+parser.add_argument('-v', '--vocab', default='data/vocab.txt', required=True, help='Output vocabulary file')
+
+args = parser.parse_args()
+
+data_file_name = args.input
+vocab_file_name = args.vocab
 
 f_d = open(data_file_name, 'r')
 f_v = open(vocab_file_name, 'w')

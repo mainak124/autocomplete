@@ -32,7 +32,13 @@ test_model_spec = model_fn('test', test_inputs, params, reuse=True)
 
 train_test(train_model_spec, test_model_spec, params, char_vocab_rev)
 
-text = 'ff'
-predicted = test_sess(text, test_model_spec, params, char_vocab_rev, 
+texts = ['ff', 'av']
+preds, pred_logits = test_sess(texts, test_model_spec, params, char_vocab_rev, 
           restore_from=os.path.join(params.model_dir, 'last_weights'))
-print('Input: {}, Predicted: {}'.format(text, text+predicted[0]))
+
+for text, t_preds, t_pred_logits in zip(texts, preds, pred_logits):
+    print('Input: {}'.format(text))
+    print('Top {} predictions:'.format(params.beam_width))
+    for pred, pred_logit in zip(t_preds, t_pred_logits):
+        print('{}: {}'.format(pred, pred_logit))
+    print('\n')

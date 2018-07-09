@@ -39,20 +39,27 @@ def build_model(mode, inputs, params):
         with tf.variable_scope('output', reuse=True):
             start_tokens = inputs['infer_start_tokens']
             end_token_id = tf.cast(params.end_token_id, tf.int32)
-            # Helper
-            helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
-                char_embedding,
-                start_tokens, end_token_id)
-
             # Decoder
-            decoder = tf.contrib.seq2seq.BasicDecoder(
-                encoder_cell, helper, encoder_state,
-                output_layer=projection_layer)
+            # Replicate encoder infos beam_width times
+            decoder_initial_state = tf.contrib.seq2seq.tile_batch(
+                encoder_state, multiplier=params.beam_width)
+
+            decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+                        cell=encoder_cell,
+                        embedding=char_embedding,
+                        start_tokens=start_tokens,
+                        end_token=end_token_id,
+                        initial_state=decoder_initial_state,
+                        beam_width=params.beam_width,
+                        output_layer=projection_layer,
+                        length_penalty_weight=0.0)
             # Dynamic decoding
-            decoder_outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(
-                decoder, maximum_iterations=5)
-            translations = decoder_outputs.sample_id
-            outputs['inference'] = translations
+            decoder_outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder)#, maximum_iterations=5)
+            outputs['inference'] = decoder_outputs.predicted_ids
+            # inference_log_probs_per_token.shape = batch_size x num_steps x beam_width
+            inference_log_probs_per_token = decoder_outputs.beam_search_decoder_output.scores
+            inference_log_probs_per_seq = tf.reduce_sum(inference_log_probs_per_token, axis=1) 
+            outputs['inference-logits'] = inference_log_probs_per_seq
     return outputs
 
 def model_fn(mode, inputs, params, reuse=False):    
@@ -66,12 +73,9 @@ def model_fn(mode, inputs, params, reuse=False):
         # Compute the output distribution of the model and the predictions
         model_output = build_model(mode, inputs, params)
         logits = model_output['logits']
-        probs = tf.nn.softmax(logits, axis=-1)
-        top_k_probs, top_k_preds = tf.nn.top_k(probs, k=3, sorted=True)
-        top_k_preds = tf.cast(top_k_preds, tf.int64)
-        print(top_k_preds)
         if mode == 'test':
             model_spec['inference'] = model_output['inference']
+            model_spec['inference-logits'] = model_output['inference-logits']
 
     if mode in ['train', 'eval']:
         tgt_sequence = inputs['tgt_sequence']        
@@ -96,15 +100,12 @@ def model_fn(mode, inputs, params, reuse=False):
         grads = tf.gradients(loss, tvars)
         grads, global_norm = tf.clip_by_global_norm(grads, params.max_grad_norm)
         tf.summary.scalar('global_norm', global_norm)
-        train_op = opt.apply_gradients(zip(grads, tvars), name='train_step')
+        global_step = tf.train.get_or_create_global_step()
+        train_op = opt.apply_gradients(zip(grads, tvars), global_step=global_step, name='train_step')
         model_spec['train_op'] = train_op
         
-    #model_spec = inputs if mode in ['train', 'eval'] else {}
-        
     variable_init_op = tf.group(*[tf.global_variables_initializer(), tf.tables_initializer()])
-    # variable_init_op = tf.global_variables_initializer()
     model_spec['variable_init_op'] = variable_init_op
-    model_spec['predictions'] = top_k_preds
-    model_spec['prediction_probs'] = top_k_probs
+    model_spec['summary_op'] = tf.summary.merge_all()
 
     return model_spec

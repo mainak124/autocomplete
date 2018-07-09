@@ -60,19 +60,23 @@ def input_fn(mode, dataset, params):
     return inputs
 
 def test_input_fn(mode, vocab, params):
-    text_tf = tf.placeholder(tf.string, shape=[None])
-    input_chars = extract_char(text_tf)
-    input_sequence = vocab.lookup(input_chars)
-    input_at_t = input_sequence[:, -1]
+    text_tf_till_t = tf.placeholder(tf.string, shape=[None])
+    text_tf_at_t = tf.placeholder(tf.string, shape=[None])
+    src_sequence_length = tf.placeholder(tf.int32, shape=[None])
+    input_chars_till_t = extract_char(text_tf_till_t)
+    input_till_t = vocab.lookup(input_chars_till_t)
+    input_at_t = vocab.lookup(text_tf_at_t)
     input_at_t = tf.cast(input_at_t, tf.int32)
-    input_sequence = input_sequence[:, :-1]
-    src_sequence = tf.concat([[[params.start_token_id]], input_sequence], axis=-1)
+    batch_size = tf.shape(input_till_t)[0]
+    start_tokens = tf.fill([batch_size, 1], params.start_token_id)
+    print('start ', start_tokens)
+    src_sequence = tf.concat([start_tokens, input_till_t], axis=-1)
     print(src_sequence)
-    src_sequence_length = [tf.shape(src_sequence)[1]]
     
     # Build and return a dictionnary containing the nodes / ops
     inputs = {
-        'text_tf': text_tf,
+        'text_tf_till_t': text_tf_till_t,
+        'text_tf_at_t': text_tf_at_t,
         'src_sequence': src_sequence,
         'src_sequence_length': src_sequence_length,
         'infer_start_tokens': input_at_t,
